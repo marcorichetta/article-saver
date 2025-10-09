@@ -17,7 +17,7 @@ class Config:
 
     # Database URL from environment variable
     # For Supabase, use the connection string from Supabase dashboard
-    DATABASE_URL: str = os.environ.get(
+    POSTGRES_URL: str = os.environ.get(
         "POSTGRES_URL", "postgresql://postgres:postgres@localhost:5432/article_saver"
     )
     # API Configuration

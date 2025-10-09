@@ -11,7 +11,7 @@ load_dotenv()
 
 
 # Create SQLAlchemy engine
-engine = create_engine(Config.DATABASE_URL, echo=True)
+engine = create_engine(Config.POSTGRES_URL, echo=True)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
