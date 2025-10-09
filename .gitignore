@@ -8,3 +8,11 @@ __pycache__/
 .Python
 .DS_Store
 .env*
+
+# custom
+node_modules
+.devbox
+firebase-*.json
+
+*.log
+.venv

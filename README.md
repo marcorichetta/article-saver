@@ -1,40 +1,36 @@
-# FastHTML Boilerplate
+# Article Saver
 
-Deploy your [FastAPI](https://fastapi.tiangolo.com/) project to Vercel with zero configuration.
+JS function to save articles from a URL to a database in Firebase.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/vercel/vercel/tree/main/examples/fastapi&template=fastapi)
+## Usage
 
-_Live Example: https://ai-sdk-preview-python-streaming.vercel.app/_
+### Read RSS
 
-Visit the [FastAPI documentation](https://fastapi.tiangolo.com/) to learn more.
+https://article-saver.vercel.app/api/rss.xml
 
-## Getting Started
+### Save Article
 
-Install the required dependencies:
+Save articles by sending a POST request to the API endpoint with the article details in JSON format.
 
-```bash
-pip install -r requirements.txt
+```shell
+curl -X POST \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer key" \
+     -d '{"url": "https://www.clearerthinking.org/post/believing-you-only-have-one-option-is-dangerous", "title": "Believing You Only Have One Option Is Dangerous", "content": "Un análisis de por qué tener múltiples opciones es crucial para la toma de decisiones."}' \
+     https://article-saver.vercel.app/api/add-article
+
+# Example Response
+{
+    "message":"Artículo añadido con éxito.",
+    "article":{
+        "url":"https://www.website.com",
+        "title":"La Noticia del Día",
+        "content":"Un resumen breve de la noticia más importante.",
+        "createdAt":{}
+    }
+}
 ```
 
-## Running Locally
+### JS Bookmarklet
 
-Start the development server on http://0.0.0.0:5001
-
-```bash
-uvicorn main:app --reload --port 5001
-```
-
-When you make changes to your project, the server will automatically reload.
-
-## Deploying to Vercel
-
-Deploy your project to Vercel with the following command:
-
-```bash
-npm install -g vercel
-vercel --prod
-```
-
-Or `git push` to your repostory with our [git integration](https://vercel.com/docs/deployments/git).
-
-To view the source code for this template, [visit the example repository](https://github.com/vercel/vercel/tree/main/examples/fastapi).
+Create a new bookmark and paste the content in bookmarklet.js. Minify it!
