@@ -1,36 +1,68 @@
-# Article Saver
+# Article Saver v2
 
-JS function to save articles from a URL to a database in Firebase.
+Save articles from URLs for later reading via RSS feed on KOReader.
+
+## Features
+
+-   🔗 Submit URLs for article extraction
+-   📄 Automatic content extraction and cleaning
+-   🗄️ PostgreSQL storage with deduplication
+-   📡 RSS feed generation for KOReader
+-   🔒 Optional API key authentication
+
+## Setup
+
+### PostgreSQL
+
+1. Install Docker and Docker Compose, then start PostgreSQL:
+
+    ```bash
+    just db-up
+    ```
+
+1. Set up environment:
+
+    ```bash
+    cp .env.example .env
+    # Edit .env if needed
+    ```
+
+1. Install dependencies:
+
+    ```bash
+    uv sync
+    ```
+
+1. Run the app:
+    ```bash
+    just dev
+    ```
 
 ## Usage
 
-### Read RSS
+### Submit an article
 
-https://article-saver.vercel.app/api/rss.xml
-
-### Save Article
-
-Save articles by sending a POST request to the API endpoint with the article details in JSON format.
-
-```shell
-curl -X POST \
-     -H "Content-Type: application/json" \
-     -H "Authorization: Bearer key" \
-     -d '{"url": "https://www.clearerthinking.org/post/believing-you-only-have-one-option-is-dangerous", "title": "Believing You Only Have One Option Is Dangerous", "content": "Un análisis de por qué tener múltiples opciones es crucial para la toma de decisiones."}' \
-     https://article-saver.vercel.app/api/add-article
-
-# Example Response
-{
-    "message":"Artículo añadido con éxito.",
-    "article":{
-        "url":"https://www.website.com",
-        "title":"La Noticia del Día",
-        "content":"Un resumen breve de la noticia más importante.",
-        "createdAt":{}
-    }
-}
+```bash
+curl -X POST http://localhost:8000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
 ```
 
-### JS Bookmarklet
+## API Endpoints
 
-Create a new bookmark and paste the content in bookmarklet.js. Minify it!
+-   `GET /` - API information
+-   `GET /docs` - API Docs
+-   `POST /submit` - Submit URL for processing
+-   `GET /rss` - RSS feed for KOReader
+-   `GET /articles` - List articles with filtering
+
+## Development
+
+The database tables are automatically created on first run.
+
+## Roadmap
+
+-   [x] Phase 1: URL processing and RSS feed
+-   [ ] Phase 2: Email integration via Resend.com
+-   [ ] Phase 3: Read status tracking
+-   [ ] Phase 4: Advanced features (tags, categories, search)

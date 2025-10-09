@@ -1,16 +1,32 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
+from typing_extensions import Annotated
 
 from fastapi import FastAPI, HTTPException, Header, Request, Depends
+from fastapi.concurrency import asynccontextmanager
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from feedgen.feed import FeedGenerator
-from firebase_admin import firestore
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from .config import Config, initialize_firebase
+from .config import Config
+from .database import get_db, init_db
+from .models import Article
+from .processor import ContentProcessor
 
-app = FastAPI(title=Config.APP_TITLE, version=Config.APP_VERSION)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Create the database and tables
+    init_db()
+    print("Database initialized successfully")
+    yield
+    # Cleanup can be added here if needed
+
+
+app = FastAPI(title=Config.APP_TITLE, version=Config.APP_VERSION, lifespan=lifespan)
 
 # Add CORS middleware
 app.add_middleware(
@@ -23,152 +39,214 @@ app.add_middleware(
 
 
 # Pydantic models
-class ArticleRequest(BaseModel):
-    url: str
-    title: Optional[str] = None
-    content: Optional[str] = None
+class ArticleSubmit(BaseModel):
+    """Model for URL submission"""
+
+    url: HttpUrl
+
+
+class ArticleResponse(BaseModel):
+    """Model for article response"""
+
+    id: int
+    title: str
+    author: Optional[str]
+    source_url: Optional[str]
+    source_type: str
+    created_at: datetime
+    read_status: bool
 
 
 @app.get("/")
 def home():
-    return {
-        "name": "Article Saver API",
-        "version": Config.APP_VERSION,
-    }
+    return Response(
+        content=f"""
+        <html>
+            <head><title>Article Saver</title></head>
+            <body>
+                <h1>Article Saver API</h1>
+                <p>Service is running</p>
+                <p>Visit <a href="/docs">/docs</a> for API documentation.</p>
+                <p>Version: {Config.APP_VERSION}</p>
+            </body>
+        </html>
+        """,
+        media_type="text/html",
+    )
 
 
-@app.post("/api/add_article")
-async def add_article_handler(
-    article: ArticleRequest,
-    authorization: Optional[str] = Header(None),
-    db=Depends(initialize_firebase),
+@app.post("/submit", response_model=ArticleResponse)
+async def submit_article(
+    article: ArticleSubmit,
+    x_api_key: Annotated[str | None, Header()] = None,
+    db: Session = Depends(get_db),
 ):
-    # --- Verificación de Clave API (¡MUY IMPORTANTE para seguridad!) ---
-    # La clave API se debe configurar como una variable de entorno en Vercel.
-    API_KEY = Config.ADD_ARTICLE_API_KEY
+    """Submit a URL for article extraction and storage"""
 
-    if not API_KEY or not authorization or not authorization.startswith("Bearer "):
+    # API Key verification
+    if x_api_key is None or x_api_key != Config.ADD_ARTICLE_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    provided_key = authorization.split(" ")[1]
-    if provided_key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API Key")
+    try:
+        # Process the URL
+        async with ContentProcessor() as processor:
+            processed = await processor.process_url(str(article.url))
 
-    # --- Procesamiento de la Petición ---
-    if not db:
-        raise HTTPException(
-            status_code=500, detail="Database not initialized. Check server logs."
+        if not processed:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to extract content from URL. The URL may be invalid or the content may not be extractable.",
+            )
+
+        # Check for duplicate content
+        existing = (
+            db.query(Article)
+            .filter(Article.content_hash == processed["content_hash"])
+            .first()
         )
 
-    try:
-        new_article = {
-            "url": article.url,
-            "title": article.title if article.title else "Sin Título",
-            "content": article.content if article.content else "",
-            "createdAt": firestore.firestore.SERVER_TIMESTAMP,  # Firestore gestiona el timestamp
-        }
-        # Guarda en la colección 'articles'
-        doc_ref = db.collection("articles").add(new_article)
+        if existing:
+            return ArticleResponse(
+                id=existing.id,
+                title=existing.title,
+                author=existing.author,
+                source_url=existing.source_url,
+                source_type=existing.source_type,
+                created_at=existing.created_at,
+                read_status=existing.read_status,
+            )
 
-        # Retorna el artículo guardado (sin el createdAt real hasta que se complete)
-        # Para una respuesta más precisa, podrías hacer un get() después de add()
-        response_article = {
-            "id": doc_ref[1].id,  # doc_ref[1] es la referencia del documento
-            "url": article.url,
-            "title": article.title if article.title else "Sin Título",
-            "content": article.content if article.content else "",
-            "createdAt": datetime.now(timezone.utc).isoformat()
-            + "Z",  # Timestamp aproximado para la respuesta
-        }
+        # Create new article
+        new_article = Article(
+            title=processed["title"],
+            author=processed["author"],
+            source_url=processed["source_url"],
+            source_type=processed["source_type"],
+            content=processed["content"],
+            content_hash=processed["content_hash"],
+            extra_metadata=processed["extra_metadata"],
+        )
 
-        return {"message": "Artículo añadido con éxito.", "article": response_article}
+        db.add(new_article)
+        db.commit()
+        db.refresh(new_article)
 
+        return ArticleResponse(
+            id=new_article.id,
+            title=new_article.title,
+            author=new_article.author,
+            source_url=new_article.source_url,
+            source_type=new_article.source_type,
+            created_at=new_article.created_at,
+            read_status=new_article.read_status,
+        )
+
+    except IntegrityError as e:
+        db.rollback()
+        print(f"Database integrity error: {e}")
+        raise HTTPException(status_code=409, detail="Article already exists")
     except Exception as e:
-        print(f"Error al añadir artículo: {e}")
-        raise HTTPException(status_code=500, detail=f"Fallo al añadir artículo: {e}")
-
-
-@app.get("/api/rss_feed")
-async def rss_feed_handler(request: Request, db=Depends(initialize_firebase)):
-    # --- Generación del Feed RSS ---
-    if not db:
-        return Response(
-            content="<error>Database not initialized. Check server logs.</error>",
-            media_type="application/xml",
-            status_code=500,
+        db.rollback()
+        print(f"Error processing article: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to process article: {str(e)}"
         )
 
+
+@app.get("/rss")
+async def rss_feed(request: Request, db: Session = Depends(get_db)):
+    """Generate RSS feed from stored articles"""
+
     try:
-        # Crea una nueva instancia de FeedGenerator
+        # Create feed generator
         fg = FeedGenerator()
         fg.title(Config.RSS_FEED_TITLE)
-        fg.link(
-            href=str(request.url).replace("http://", "https://"),
-            rel="self",
-        )  # Asegura HTTPS
+        fg.link(href=str(request.url), rel="self")
         fg.description(Config.RSS_FEED_DESCRIPTION)
         fg.language(Config.RSS_FEED_LANGUAGE)
 
-        # Opcional: Puedes establecer un autor o un logo si quieres
-        # fg.author({'name': 'Tu Nombre', 'email': 'tu.email@ejemplo.com'})
-        # fg.logo('http://example.com/logo.png')
-
-        # Obtiene los artículos de Firestore
-        articles_ref = db.collection("articles")
-        snapshot = (
-            articles_ref.order_by(
-                "createdAt", direction=firestore.firestore.Query.DESCENDING
-            )
+        # Fetch recent articles
+        articles = (
+            db.query(Article)
+            .order_by(Article.created_at.desc())
             .limit(Config.RSS_FEED_LIMIT)
-            .stream()
+            .all()
         )
 
-        # Añade cada artículo como una entrada al feed
-        for doc in snapshot:
-            article = doc.to_dict()
-            fe = fg.add_entry()  # Crea una nueva entrada de feed
+        # Add each article as a feed entry
+        for article in articles:
+            fe = fg.add_entry()
+            fe.title(article.title)
 
-            fe.title(article.get("title", "Sin Título"))
-            fe.link(href=article.get("url", "#"), rel="alternate")  # link del artículo
-            fe.guid(
-                article.get("url") or doc.id, permalink=True
-            )  # GUID para identificar el artículo
+            # Use source URL if available, otherwise use article ID
+            link = article.source_url or f"{str(request.base_url)}articles/{article.id}"
+            fe.link(href=link, rel="alternate")
+            fe.guid(link, permalink=True)
 
-            # Convierte el timestamp de Firestore a un objeto datetime si existe
-            if article.get("createdAt"):
-                if isinstance(article["createdAt"], datetime):
-                    fe.pubDate(article["createdAt"].astimezone(timezone.utc))
-                elif hasattr(
-                    article["createdAt"], "toDate"
-                ):  # Para objetos Timestamp de Firestore
-                    fe.pubDate(article["createdAt"].toDate().astimezone(timezone.utc))
-            else:
-                fe.pubDate(
-                    datetime.now(timezone.utc)
-                )  # Fecha actual si no hay createdAt
+            # Set publication date
+            fe.pubDate(article.created_at.replace(tzinfo=timezone.utc))
 
-            # Contenido HTML para la descripción
-            fe.content(article.get("content", ""), type="html")
+            # Add author if available
+            if article.author:
+                fe.author({"name": article.author})
 
-        # Genera el XML del feed RSS
-        rss_feed_xml = fg.rss_str(pretty=True)  # pretty=True para un XML legible
+            # Add content as HTML
+            fe.content(article.content, type="html")
 
-        # Envía la respuesta con el Content-Type correcto
+        # Generate RSS XML
+        rss_feed_xml = fg.rss_str(pretty=True)
+
         return Response(
-            rss_feed_xml,
+            content=rss_feed_xml,
             media_type="application/rss+xml; charset=utf-8",
             status_code=200,
         )
 
     except Exception as e:
-        print(f"Error al generar el feed RSS: {e}")
-        # En caso de error, devuelve un XML de error para que los clientes RSS puedan manejarlo
+        print(f"Error generating RSS feed: {e}")
         error_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
-    <title>Error en Mi Feed de Artículos Personal</title>
+    <title>Error - {Config.RSS_FEED_TITLE}</title>
     <link>#</link>
-    <description>Fallo al generar el feed RSS: {str(e)}</description>
+    <description>Failed to generate RSS feed: {str(e)}</description>
 </channel>
 </rss>"""
-        return Response(error_xml, media_type="application/xml", status_code=500)
+        return Response(
+            content=error_xml, media_type="application/xml", status_code=500
+        )
+
+
+@app.get("/articles")
+async def list_articles(
+    skip: int = 0,
+    limit: int = 20,
+    unread_only: bool = False,
+    db: Session = Depends(get_db),
+):
+    """List articles with pagination and filtering"""
+
+    query = db.query(Article)
+
+    if unread_only:
+        query = query.filter(Article.read_status.is_(False))
+
+    articles = query.order_by(Article.created_at.desc()).offset(skip).limit(limit).all()
+
+    return {
+        "articles": [
+            ArticleResponse(
+                id=a.id,
+                title=a.title,
+                author=a.author,
+                source_url=a.source_url,
+                source_type=a.source_type,
+                created_at=a.created_at,
+                read_status=a.read_status,
+            )
+            for a in articles
+        ],
+        "skip": skip,
+        "limit": limit,
+        "total": query.count(),
+    }
