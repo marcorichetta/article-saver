@@ -21,6 +21,15 @@ load_dotenv()
 # https://docs.sqlalchemy.org/en/20/core/pooling.html#switching-pool-implementations
 engine = create_engine(Config.DATABASE_URL, poolclass=NullPool)
 
+# Test the connection
+try:
+    with engine.connect() as connection:
+        print(engine.url)
+        print("Connection successful!")
+except Exception as e:
+    print(engine.url)
+    print(f"Failed to connect: {e}")
+
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
