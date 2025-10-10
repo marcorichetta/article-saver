@@ -1,7 +1,7 @@
 """Database configuration and session management"""
 
-import os
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 from sqlalchemy.orm import sessionmaker, declarative_base
 from dotenv import load_dotenv
 
@@ -9,11 +9,10 @@ from app.config import Config
 
 load_dotenv()
 
-if Config.DEBUG:
-    print(Config.POSTGRES_URL)
 
 # Create SQLAlchemy engine
-engine = create_engine(Config.POSTGRES_URL, echo=True)
+# https://supabase.com/docs/guides/troubleshooting/using-sqlalchemy-with-supabase-FUqebT#deploying-to-auto-scaling-servers
+engine = create_engine(Config.POSTGRES_URL, client_encoding="utf8", poolclass=NullPool)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
