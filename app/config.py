@@ -14,6 +14,8 @@ class Config:
 
     # Environment
     ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "dev").lower()
+    # Feature flags
+    DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"
 
     # Database URL from environment variable
     # For Supabase, use the connection string from Supabase dashboard
