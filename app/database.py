@@ -15,13 +15,12 @@ load_dotenv()
 
 # Handle deprecated postgres:// URL scheme
 # https://github.com/sqlalchemy/sqlalchemy/issues/6083#issuecomment-801478013
-if Config.POSTGRES_URL.startswith("postgres://"):
-    Config.POSTGRES_URL = Config.POSTGRES_URL.replace("postgres://", "postgresql://", 1)
 
-if Config.DEBUG:
-    print(f"Database URL: {Config.POSTGRES_URL}")
+# Create the SQLAlchemy engine
+# If using Transaction Pooler or Session Pooler, we want to ensure we disable SQLAlchemy client side pooling -
+# https://docs.sqlalchemy.org/en/20/core/pooling.html#switching-pool-implementations
+engine = create_engine(Config.DATABASE_URL, poolclass=NullPool)
 
-engine = create_engine(Config.POSTGRES_URL, client_encoding="utf8", poolclass=NullPool)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

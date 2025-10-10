@@ -13,17 +13,22 @@ class Config:
     """Application configuration class"""
 
     # Environment
-    ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "dev").lower()
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "dev").lower()
     # Feature flags
-    DEBUG: bool = os.environ.get("DEBUG", "false").lower() == "true"
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
 
-    # Database URL from environment variable
     # For Supabase, use the connection string from Supabase dashboard
-    POSTGRES_URL: str = os.environ.get(
-        "POSTGRES_URL", "postgresql://postgres:postgres@localhost:5432/article_saver"
-    )
+    USER = os.getenv("POSTGRES_USER")
+    PASSWORD = os.getenv("POSTGRES_PASSWORD")
+    HOST = os.getenv("POSTGRES_HOST")
+    PORT = os.getenv("POSTGRES_PORT", "6543")
+    DATABASE = os.getenv("POSTGRES_DATABASE")
+
+    # Construct the SQLAlchemy connection string
+    DATABASE_URL = f"postgresql+psycopg2://{USER}:{PASSWORD}@{HOST}:{PORT}/{DATABASE}?sslmode=require"
+
     # API Configuration
-    ADD_ARTICLE_API_KEY: Optional[str] = os.environ.get("ADD_ARTICLE_API_KEY")
+    ADD_ARTICLE_API_KEY: Optional[str] = os.getenv("ADD_ARTICLE_API_KEY")
 
     # App Settings
     APP_TITLE: str = "Article Saver API"
