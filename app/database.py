@@ -9,6 +9,8 @@ from app.config import Config
 
 load_dotenv()
 
+if Config.DEBUG:
+    print(Config.POSTGRES_URL)
 
 # Create SQLAlchemy engine
 engine = create_engine(Config.POSTGRES_URL, echo=True)

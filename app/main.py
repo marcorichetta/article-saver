@@ -226,9 +226,6 @@ async def list_articles(
 ):
     """List articles with pagination and filtering"""
 
-    if Config.DEBUG:
-        print(Config.POSTGRES_URL)
-
     query = db.query(Article)
 
     if unread_only:
